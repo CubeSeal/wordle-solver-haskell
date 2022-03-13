@@ -12,7 +12,7 @@ library(shiny)
 source(here::here("wordle_solver.R"))
 
 # Import word list -------------------------------------------------------------
-word_list <- readLines(here::here("./words.txt"))
+word_list <- readLines(here::here("words.txt"))
 
 # Shiny ------------------------------------------------------------------------
 

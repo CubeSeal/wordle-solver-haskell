@@ -83,10 +83,9 @@ score_words <- function(word_list) {
   
   # Score for each word based on frequency of letters in general.
   word_score_approx <- word_vec_list |>
-    as.data.frame() |> 
-    apply(c(1, 2), \(x, y) x[match(y, names(x))], x= freq_table_gen) |> 
-    (\(x) x*(1-x))() |> 
-    rowSums()
+    apply(1, unique) |> 
+    sapply(\(x, y) x[match(y, names(x))], x= freq_table_gen) |> 
+    vapply(\(x) sum(x*(1-x)), numeric(1))
   
   # Return value that combines both positional and general scores.
   word_score <- magrittr::add(probs, word_score_approx) |> 
