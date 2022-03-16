@@ -25,17 +25,31 @@ ui <- fluidPage(
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         sidebarPanel(
+            h3("Input"),
+            fixedRow(
+              column(2,
+                     actionButton("first_letter", "W")),
+              column(2,
+                     actionButton("second_letter", "W")),
+              column(2,
+                     actionButton("third_letter", "W")),
+              column(2,
+                     actionButton("fourth_letter", "W")),
+              column(2,
+                     actionButton("fifth_letter", "W")),
+            ),
             textInput("flag", h3("Enter flag"), value = "00000"),
+            textInput("guess", h3("Enter Custom Guess"), value = ""),
             actionButton("go_button", "Next Iteration"),
             actionButton("reset_button", "Reset")
         ),
 
         # Show a plot of the generated distribution
         mainPanel(
+          h3("Flag:"),
+          textOutput("flag"),
           h3("Guess:"),
           textOutput("guess"),
-          h3("Result:"),
-          textOutput("flag"),
           h3("Best Words:"),
           dataTableOutput("words_by_score")
         )
@@ -43,7 +57,7 @@ ui <- fluidPage(
 )
 
 # Define server logic required to draw a histogram
-server <- function(input, output) {
+server <- function(input, output, session) {
   
     word_list_score <- score_words(word_list) |> 
       dplyr::arrange(dplyr::desc(`V1`))
@@ -56,6 +70,8 @@ server <- function(input, output) {
                          guess = guess,
                          score = word_list_score)
     
+    observe({updateTextInput(session, "guess", value = rv$guess)})
+    
     observeEvent(input$go_button,
                  {
                    flags_for_guess <- input$flag |>
@@ -65,7 +81,7 @@ server <- function(input, output) {
                    
                    rv$new_word_list <-
                      word_list_filter(rv$new_word_list,
-                                      rv$guess,
+                                      input$guess,
                                       flags_for_guess) |>
                      na.omit()
                    
@@ -94,10 +110,13 @@ server <- function(input, output) {
                    rv$new_word_list <- word_list
                    rv$guess <- guess
                    rv$score <- word_list_score
+                   
+                   updateTextInput(session, "flag", value = "00000")
+                   updateTextInput(session, "guess", value = rv$guess)
                  })
     
     output$guess <- renderText({
-      rv$guess
+      input$guess
     })
     
     output$flag <- renderText({

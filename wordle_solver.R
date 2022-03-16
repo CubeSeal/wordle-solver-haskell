@@ -13,17 +13,23 @@ wordle_checker <- function(guess, word) {
   
 }
 
+# Takes vector and gives same length vector with probabilities substituted instead.
+inline_sub_probs <- function(vector) {
+  
+  freq_table <- vector |> 
+    table() |> 
+    prop.table()
+  
+  freq_table[fastmatch::fmatch(vector, rownames(freq_table))]
+}
+
 # Given data frame of ngrams, find probability of occurrence for each record.
 pos_score_prob <- function(data) {
   
-  freq_table_pos <- data |> 
-    apply(2, \(x) table(x) |> prop.table())
-  
   data |>
     as.list() |> 
-    mapply(FUN = \(x, y) x[match(y, rownames(x))],
-           x = freq_table_pos,
-           SIMPLIFY = T) |>
+    vapply(FUN = inline_sub_probs,
+           FUN.VALUE = numeric(nrow(data))) |>
     (\(x) x*(1-x))() |> 
     rowSums(na.rm = T)
     
@@ -48,7 +54,8 @@ score_words <- function(word_list) {
   # Creates character dataframe of letters where each row is a word.
   word_vec_list <- word_list |> 
     strsplit('') |> 
-    do.call(what = rbind)
+    do.call(what = rbind.data.frame) |> 
+    as.matrix()
   
   # # Frequency of letters for each position (1st letter, 2nd letter, etc.).
   # freq_table_pos <- word_vec_list |> 
@@ -69,10 +76,14 @@ score_words <- function(word_list) {
     t() |>
     as.data.frame() |> 
     as.list() |> 
-    lapply(\(x) apply(word_vec_list, 1, generate_ngram, mask = x, simplify = F)) |>
+    lapply(\(x) apply(word_vec_list,
+                      1,
+                      generate_ngram,
+                      mask = x,
+                      simplify = F)) |>
     lapply(\(y) do.call(what = rbind.data.frame, y))
   
-  probs <- sapply(ngrams_word_list, pos_score_prob) |> 
+  word_score_probs <- sapply(ngrams_word_list, pos_score_prob) |> 
     rowSums()
   
   # Frequency of letters in general.
@@ -84,11 +95,11 @@ score_words <- function(word_list) {
   # Score for each word based on frequency of letters in general.
   word_score_approx <- word_vec_list |>
     apply(1, unique) |> 
-    sapply(\(x, y) x[match(y, names(x))], x= freq_table_gen) |> 
+    sapply(\(x, y) x[fastmatch::fmatch(y, names(x))], x= freq_table_gen) |> 
     vapply(\(x) sum(x*(1-x)), numeric(1))
   
   # Return value that combines both positional and general scores.
-  word_score <- magrittr::add(probs, word_score_approx) |> 
+  word_score <- magrittr::add(word_score_probs, word_score_approx) |> 
     cbind(word_list) |> 
     as.data.frame() |> 
     dplyr::mutate(`V1` = as.numeric(`V1`))
