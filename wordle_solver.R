@@ -13,7 +13,8 @@ wordle_checker <- function(guess, word) {
   
 }
 
-# Takes vector and gives same length vector with probabilities substituted instead.
+# Takes vector and gives same length vector with probabilities substituted
+# instead.
 inline_sub_probs <- function(vector) {
   
   freq_table <- vector |> 
@@ -23,29 +24,25 @@ inline_sub_probs <- function(vector) {
   freq_table[fastmatch::fmatch(vector, rownames(freq_table))]
 }
 
-# Given data frame of ngrams, find probability of occurrence for each record.
-pos_score_prob <- function(data) {
+# Generates token probs given word vector and mask.
+generate_token_probs <- function(word_vec, mask) {
   
-  data |>
+  mask <- as.logical(mask) 
+  
+  word_vec[,!mask] <- "_"
+  
+  word_vec |>
+    apply(1, \(x) paste0(x, collapse = ''), simplify = F) |>
+    as.character() |> 
+    strsplit(split = "_", fixed = T) |> 
+    as.data.frame() |> 
+    t() |> 
+    as.data.frame() |> 
     as.list() |> 
     vapply(FUN = inline_sub_probs,
-           FUN.VALUE = numeric(nrow(data))) |>
+           FUN.VALUE = numeric(nrow(word_vec))) |>
     (\(x) x*(1-x))() |> 
     rowSums(na.rm = T)
-    
-}
-
-# Generates ngram vector given word vector and mask.
-generate_ngram <- function(word_vec, mask) {
-  
- mask <- as.logical(mask) 
-  
- word_vec[!mask] <- "_"
- 
- word_vec |>
-   paste0(collapse = '') |> 
-   strsplit(split = "_") |>
-   magrittr::extract2(1)
 }
 
 ## 'Scores' words based on frequency of n-grams. Highest score is best.
@@ -57,33 +54,13 @@ score_words <- function(word_list) {
     do.call(what = rbind.data.frame) |> 
     as.matrix()
   
-  # # Frequency of letters for each position (1st letter, 2nd letter, etc.).
-  # freq_table_pos <- word_vec_list |> 
-  #   apply(2, \(x) table(x) |> prop.table()) 
-  # 
-  # # Score for each word based on frequency of letter for positions.
-  # word_score_pos <- word_vec_list |>
-  #   as.data.frame() |> 
-  #   as.list() |> 
-  #   mapply(FUN = \(x, y) x[match(y, names(x))],
-  #          x = freq_table_pos,
-  #          SIMPLIFY = F) |> 
-  #   sapply(\(x) setNames(x, NULL)) |> 
-  #   apply(1, \(x) prod(x*(1-x)))
-  
-  ngrams_word_list <- replicate(5, c(0, 1), simplify = F) |> 
+  # Frequency of tokens for all possible tokens.
+  word_score_probs <- replicate(5, c(0, 1), simplify = F) |> 
     expand.grid() |>
     t() |>
     as.data.frame() |> 
     as.list() |> 
-    lapply(\(x) apply(word_vec_list,
-                      1,
-                      generate_ngram,
-                      mask = x,
-                      simplify = F)) |>
-    lapply(\(y) do.call(what = rbind.data.frame, y))
-  
-  word_score_probs <- sapply(ngrams_word_list, pos_score_prob) |> 
+    sapply(\(x) generate_token_probs(word_vec_list, x)) |>
     rowSums()
   
   # Frequency of letters in general.
@@ -95,7 +72,7 @@ score_words <- function(word_list) {
   # Score for each word based on frequency of letters in general.
   word_score_approx <- word_vec_list |>
     apply(1, unique) |> 
-    sapply(\(x, y) x[fastmatch::fmatch(y, names(x))], x= freq_table_gen) |> 
+    sapply(\(x, y) y[fastmatch::fmatch(x, names(y))], y = freq_table_gen) |> 
     vapply(\(x) sum(x*(1-x)), numeric(1))
   
   # Return value that combines both positional and general scores.
@@ -154,16 +131,14 @@ word_list_filter <- function(word_list, guess, flags_for_guess) {
   approx_match_filter_flag <-
     apply(word_vec_list,
           1,
-          \(x) check_common_letters(x, guess_vec[approx_matches])
-    )
+          \(x) check_common_letters(x, guess_vec[approx_matches]))
+  
   # If any of the words in word_list have letters which *aren't* excluded by the
   #   no_match logical returned by wordle_checker().
-  no_match_filter_flag <- !apply(
-    word_vec_list,
-    1,
-    \(x) any(x %in% guess_vec[no_matches],
-             simplify = F)
-  )
+  no_match_filter_flag <- !apply(word_vec_list,
+                                 1,
+                                 \(x) any(x %in% guess_vec[no_matches],
+                                          simplify = F))
   
   # Total flag is (exact_matches + approx_matches)*no_matches.
   total_flag <- exact_match_filter_flag |> 
@@ -182,7 +157,7 @@ word_list_filter <- function(word_list, guess, flags_for_guess) {
 ## Solves wordle based on hidden word. Hidden word is never compared to
 ##  anything. Recursive function that narrows down available words.
 wordle_solver <- function(word_list, hidden_word) {
-
+  
   # Guess is highest scoring word from word_list. Ties are broken.
   guess <- score_words(word_list) |> 
     dplyr::slice_max(`V1`, n = 1, with_ties = F) |>
