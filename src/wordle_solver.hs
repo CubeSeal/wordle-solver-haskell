@@ -1,12 +1,18 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 import System.IO ()
 import Data.Char ( toLower )
+import Data.List
 import Data.Data ( Data(toConstr) )
+import Data.Maybe (catMaybes, mapMaybe)
+import Data.Function (on)
+import Debug.Trace (trace)
 
 data WordleChar = NoMatch Char | Approx Char | Exact Char
     deriving (Read, Show, Eq, Data)
 
+type Table = [([Char], Double)]
 type WordleResult = [WordleChar]
+type WordList = [String]
 
 toString :: WordleResult -> String
 toString = map toChar
@@ -27,25 +33,44 @@ main = do
     final_word <- getLine
     print $ wordleSolver word_list (map toLower final_word) []
 
-wordleSolver :: [String] -> String -> [String] -> [String]
-wordleSolver word_list final_word guess_list = if all (checkConst (Exact 'a')) guess_flag
-    then guess_list ++ [guess]
-    else wordleSolver new_word_list final_word (guess_list ++ [guess])
+wordleSolver :: WordList -> String -> [String] -> [String]
+wordleSolver word_list final_word accum_guess = if all (checkConst (Exact 'a')) guess_flag
+    then accum_guess ++ [guess]
+    else wordleSolver new_word_list final_word (accum_guess ++ [guess])
     where
         guess = scoreWords word_list
         guess_flag = wordleGame guess final_word
         new_word_list = filter (`validWords` guess_flag) word_list
 
 wordleGame :: [Char] -> [Char] -> WordleResult
-wordleGame guess final_word = zipWith (\x y -> if x == y then Exact x else (if elem x final_word then Approx x else NoMatch x)) guess final_word
+wordleGame guess final_word = zipWith func guess final_word
+    where
+        func = \x y -> if x == y then Exact x else (if x `elem` final_word then Approx x else NoMatch x)
 
-scoreWords :: [String] -> String
-scoreWords = head
+scoreWords :: WordList -> String
+scoreWords word_list = fst $ last sorted_word_list
+    where
+        sorted_word_list = sortBy (compare `on` snd) approx_score
+        approx_score = zip word_list $ map (`approxScore` freq_table) word_list
+        freq_table = freqTable $ concat word_list
+
+approxScore :: String -> Table -> Double
+approxScore word freq_table = sum $ mapMaybe (\x -> lookup [x] freq_table) $ nub word
+
+freqTable :: [Char] -> Table
+freqTable ls = map (\x -> (fst x, fromIntegral (snd x) / fromIntegral n_letters ) ) count_table
+    where
+        n_letters = sum $ map snd count_table
+        count_table = map (\x -> ([head x], length x)) . group . sort $ ls
 
 validWords :: String -> WordleResult -> Bool
-validWords word guess_flag = (x || y) && z && w
+validWords word guess_flag = x && y && z && w
     where
         w = word /= toString guess_flag
-        x = or $ zipWith (==) word $ toString guess_flag
-        y = any (`elem` [x | Approx x <- guess_flag]) word
-        z = not $ any (`elem` [x | NoMatch x <- guess_flag]) word
+        x = if length [ls | Exact ls <- guess_flag] == 0
+                then True
+                else or $ zipWith (\x y -> Exact x == y) word guess_flag
+        y = if length [ls | Approx ls <- guess_flag] == 0
+                then True
+                else any (`elem` [ls | Approx ls <- guess_flag]) word
+        z = not $ any (`elem` [ls | NoMatch ls <- guess_flag]) word
