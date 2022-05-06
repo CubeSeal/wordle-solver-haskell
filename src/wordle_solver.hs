@@ -1,76 +1,107 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 import System.IO ()
 import Data.Char ( toLower )
-import Data.List
+import Data.List ( group, nub, sort, sortBy, transpose )
+import Data.List.Split ( splitOn )
 import Data.Data ( Data(toConstr) )
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe, fromMaybe)
 import Data.Function (on)
 import Debug.Trace (trace)
 
-data WordleChar = NoMatch Char | Approx Char | Exact Char
+-- Represent the coloured characters of the game.
+data WordleChar = NoMatch {toChar:: Char} | Approx {toChar:: Char} | Exact {toChar:: Char}
     deriving (Read, Show, Eq, Data)
-
-type Table = [([Char], Double)]
+newtype ProbTable a = ProbTable [([a], Double)]
+    deriving (Show, Eq)
 type WordleResult = [WordleChar]
 type WordList = [String]
+type Mask = [Int]
 
+-- Light Functions
 toString :: WordleResult -> String
 toString = map toChar
-
-toChar :: WordleChar -> Char
-toChar (NoMatch x) = x
-toChar (Approx x) = x
-toChar (Exact x) = x
 
 checkConst :: (Data g) => g -> g -> Bool
 checkConst x y = toConstr x == toConstr y
 
+dropExact :: WordleResult -> String -> String
+dropExact (x:xs) (y:ys) | checkConst x (Exact y) = dropExact xs ys
+                        | otherwise              = y : dropExact xs ys
+dropExact _ _ = []
+
+-- Main
 main :: IO()
 main = do
-    words_raw <- readFile "./res/words.txt"
-    let word_list = words words_raw
+    wordsRaw <- readFile "./res/words.txt"
+    let wordList = words wordsRaw
     putStrLn "Enter word to solve:"
-    final_word <- getLine
-    print $ wordleSolver word_list (map toLower final_word) []
+    finalWord <- getLine
+    print $ wordleSolver wordList (map toLower finalWord) []
 
+-- Program Logic Functions
 wordleSolver :: WordList -> String -> [String] -> [String]
-wordleSolver word_list final_word accum_guess = if all (checkConst (Exact 'a')) guess_flag
-    then accum_guess ++ [guess]
-    else wordleSolver new_word_list final_word (accum_guess ++ [guess])
+wordleSolver wordList finalWord accumGuess = if all (checkConst (Exact 'a')) guessFlag
+    then accumGuess ++ [guess]
+    else wordleSolver newWordList finalWord (accumGuess ++ [guess])
     where
-        guess = scoreWords word_list
-        guess_flag = wordleGame guess final_word
-        new_word_list = filter (`validWords` guess_flag) word_list
+        guess = scoreWords wordList
+        guessFlag = wordleGame guess finalWord
+        newWordList = filter (`validWords` guessFlag) wordList
 
 wordleGame :: [Char] -> [Char] -> WordleResult
-wordleGame guess final_word = zipWith func guess final_word
+wordleGame guess finalWord = zipWith func guess finalWord
     where
-        func = \x y -> if x == y then Exact x else (if x `elem` final_word then Approx x else NoMatch x)
+        func = \x y -> if x == y then Exact x else (if x `elem` finalWord then Approx x else NoMatch x)
 
 scoreWords :: WordList -> String
-scoreWords word_list = fst $ last sorted_word_list
+scoreWords wordList = fst $ last sortedWordList
     where
-        sorted_word_list = sortBy (compare `on` snd) approx_score
-        approx_score = zip word_list $ map (`approxScore` freq_table) word_list
-        freq_table = freqTable $ concat word_list
+        sortedWordList = sortBy (compare `on` snd) approxScore
+        approxScore = zip wordList $ map (`wordApproxScore` probTable) wordList
+        probTable = generateProbTable $ concat wordList
 
-approxScore :: String -> Table -> Double
-approxScore word freq_table = sum $ mapMaybe (\x -> lookup [x] freq_table) $ nub word
-
-freqTable :: [Char] -> Table
-freqTable ls = map (\x -> (fst x, fromIntegral (snd x) / fromIntegral n_letters ) ) count_table
+wordApproxScore :: String -> ProbTable Char -> Double
+wordApproxScore word probTable = sum $ mapMaybe lookupTable $ nub word
     where
-        n_letters = sum $ map snd count_table
-        count_table = map (\x -> ([head x], length x)) . group . sort $ ls
+        lookupTable x = lookup [x] $ toRaw probTable
+        toRaw (ProbTable x) = x
+
+-- positionalScore :: WordList -> Mask -> FreqTable String
+-- positionalScore wordList mask =
+--     where
+--         splitWords = map (splitOn "_" . (\x -> replace x mask '_')) wordList
+--         splitCols = transpose splitWords
+--             where
+--                 k = map lookupFreq ls
+--                 lookupFreq x = lookup [x] $ toRaw freqTable
+--                 toRaw (Table x) = x
+--                 freqTable = generateFreqTable ls
+
+
+replace :: String -> [Int] -> Char -> String
+replace xs i e = last $ iterate func i
+    where
+        iterate :: (a -> String) -> [a] -> [String]
+        iterate _ [] = []
+        iterate f (a:bc) = f a : iterate f bc
+        func :: Int -> String
+        func i = case splitAt i xs of
+                        (before, _:after) -> before ++ e: after
+                        _ -> xs
+
+generateProbTable :: Ord a => [a] -> ProbTable a
+generateProbTable ls = ProbTable output
+    where
+        output = map (\x -> (fst x, fromIntegral (snd x) / fromIntegral nLetters ) ) countTable
+        nLetters = sum $ map snd countTable
+        countTable = map (\x -> ([head x], length x)) . group . sort $ ls
 
 validWords :: String -> WordleResult -> Bool
-validWords word guess_flag = x && y && z && w
+validWords word guessFlag = and [wordCriteria, exactCriteria, approxCriteria, nomatchCriteria]
     where
-        w = word /= toString guess_flag
-        x = if length [ls | Exact ls <- guess_flag] == 0
-                then True
-                else or $ zipWith (\x y -> Exact x == y) word guess_flag
-        y = if length [ls | Approx ls <- guess_flag] == 0
-                then True
-                else any (`elem` [ls | Approx ls <- guess_flag]) word
-        z = not $ any (`elem` [ls | NoMatch ls <- guess_flag]) word
+        wordCriteria = word /= toString guessFlag
+        exactCriteria = null ([ls | Exact ls <- guessFlag]) || or (zipWith (\x y -> Exact x == y) word guessFlag)
+        approxCriteria = case [ls | Approx ls <- guessFlag] of
+            [] -> True
+            x -> any (`elem` x) $ dropExact guessFlag word
+        nomatchCriteria = not $ any (`elem` [ls | NoMatch ls <- guessFlag]) word
