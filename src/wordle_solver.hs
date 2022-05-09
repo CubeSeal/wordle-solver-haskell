@@ -1,14 +1,12 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 import System.IO ()
 import Data.Char ( toLower )
-import Data.List ( group, nub, sort, sortBy, transpose, delete )
-import Data.List.Split ( splitOn )
+import Data.List.Split ( wordsBy )
 import Data.Data ( Data(toConstr) )
-import Data.Maybe (catMaybes, mapMaybe, fromMaybe)
+import Data.Maybe (mapMaybe, fromMaybe)
 import Data.Function (on)
-import Debug.Trace (trace)
 
--- Data types
+-- Data typesS
 -- Represent the coloured characters of the game.
 data WordleChar = NoMatch {toChar :: Char}
     | Approx {toChar :: Char}
@@ -23,22 +21,21 @@ type WordList = [String]
 type Mask = [Int]
 
 -- Light Functions
+powerSet :: [a] -> [[a]]
+powerSet [] = [[]]
+powerSet (x:xs) = map (x:) (powerSet xs) ++ powerSet xs
+
 toString :: WordleResult -> String
 toString = map toChar
 
 checkConst :: (Data g) => g -> g -> Bool
 checkConst x y = toConstr x == toConstr y
 
-dropExact :: WordleResult -> String -> String
-dropExact (x:xs) (y:ys) | checkConst x (Exact y) = dropExact xs ys
-                        | otherwise              = y : dropExact xs ys
-dropExact _ _ = []
-
 leftJoinProbTable :: Eq a => (Double -> Double -> Double) -> ProbTable a -> ProbTable a -> ProbTable a
 leftJoinProbTable func leftTBL rightTBL = ProbTable $ zip index newProbs
     where
         index = map fst $ fromProbTable leftTBL
-        leftProbs = map snd $ fromProbTable rightTBL
+        leftProbs = map snd $ fromProbTable leftTBL
         rightProbs = map (\x -> fromMaybe 0 $ lookupTable x rightTBL) index
         newProbs = zipWith func leftProbs rightProbs
 
@@ -66,10 +63,8 @@ wordleSolver wordList finalWord accumGuess = if all (checkConst (Exact 'a')) gue
     then accumGuess ++ [guess]
     else wordleSolver newWordList finalWord (accumGuess ++ [guess])
     where
-        guess = trace (show guess2) guess2
-        guess2 = scoreWords wordList
-        guessFlag = trace (show guessFlag2) guessFlag2
-        guessFlag2 = wordleGame guess finalWord
+        guess = scoreWords wordList
+        guessFlag = wordleGame guess finalWord
         newWordList = filter (`validWords` guessFlag) wordList
 
 wordleGame :: [Char] -> [Char] -> WordleResult
@@ -81,9 +76,11 @@ scoreWords :: WordList -> String
 scoreWords wordList = fst $ last sortedWordList
     where
         sortedWordList = sortBy (compare `on` snd) $ fromProbTable totalScore
-        approxScore = ProbTable $ zip wordList $ map (`wordApproxScore` approxProbTable) wordList
-        probScore = positionalScore wordList [0, 1]
         totalScore = leftJoinProbTable (+) approxScore probScore
+        approxScore = ProbTable $ zip wordList $ map (`wordApproxScore` approxProbTable) wordList
+        allMasks = delete [] $ powerSet [0,1.. 4]
+        probScores = map (positionalScore wordList) allMasks
+        probScore = ProbTable $ zip wordList $ map sum $ transpose probScores
         approxProbTable = generateProbTable $ concat wordList
 
 lookupTable :: Eq a => a -> ProbTable a -> Maybe Double
@@ -92,14 +89,13 @@ lookupTable tok probTable = lookup tok $ fromProbTable probTable
 wordApproxScore :: String -> ProbTable Char -> Double
 wordApproxScore word probTable = sum $ mapMaybe (`lookupTable` probTable) $ nub word
 
-positionalScore :: WordList -> Mask -> ProbTable String
-positionalScore wordList mask = ProbTable o
+positionalScore :: WordList -> Mask -> [Double]
+positionalScore wordList mask = rowSums
     where
-        splitWords = map (splitOn "_" . (\x -> replace x mask '_')) wordList
-        splitCols = transpose splitWords
-        colwiseFreqs = map tokProbs splitCols
         rowSums = map sum $ transpose colwiseFreqs
-        o = zip wordList rowSums
+        colwiseFreqs = map tokProbs splitCols
+        splitCols = transpose splitWords
+        splitWords = map (wordsBy (== '_') . (\x -> replace x mask '_')) wordList
         tokProbs :: [String] -> [Double]
         tokProbs tokList = map func tokList
             where
@@ -107,20 +103,22 @@ positionalScore wordList mask = ProbTable o
                 probTable = generateProbTable tokList
 
 replace :: String -> [Int] -> Char -> String
-replace xs i e = last $ iterate func i
+replace xs i e = last $ iterate' func i
     where
-        iterate :: (a -> String) -> [a] -> [String]
-        iterate _ [] = []
-        iterate f (a:bc) = f a : iterate f bc
+        iterate' :: (a -> String) -> [a] -> [String]
+        iterate' _ [] = []
+        iterate' f (a:bc) = f a : iterate' f bc
         func :: Int -> String
-        func i = case splitAt i xs of
+        func i' = case splitAt i' xs of
                         (before, _:after) -> before ++ e: after
                         _ -> xs
 
 generateProbTable :: Ord a => [a] -> ProbTable a
 generateProbTable ls = ProbTable output
     where
-        output = map (\x -> (fst x, fromIntegral (snd x) / fromIntegral nLetters ) ) countTable
+        output = map func countTable
+        func (x, y) = (x, prob y * (1 - prob y))
+        prob x = fromIntegral x / fromIntegral nLetters
         nLetters = sum $ map snd countTable
         countTable = map (\x -> (head x, length x)) . group . sort $ ls
 
