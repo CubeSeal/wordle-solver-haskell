@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-import System.IO ()
 import Data.Char ( toLower )
 import Data.List ( delete, group, nub, sort, sortBy, transpose )
 import Data.Data ( Data(toConstr) )
@@ -8,9 +7,9 @@ import Data.Function (on)
 
 -- Data types
 -- Represent the coloured characters of the game.
-data WordleChar = NoMatch {toChar :: Char}
-    | Approx {toChar :: Char}
-    | Exact {toChar :: Char}
+data WordleChar = NoMatch {fromWordleChar :: Char}
+    | Approx {fromWordleChar :: Char}
+    | Exact {fromWordleChar :: Char}
     deriving (Read, Show, Eq, Data)
 
 newtype ProbTable a = ProbTable {fromProbTable :: [(a, Double)]}
@@ -26,7 +25,7 @@ powerSet [] = [[]]
 powerSet (x:xs) = map (x:) (powerSet xs) ++ powerSet xs
 
 toString :: WordleResult -> String
-toString = map toChar
+toString = map fromWordleChar
 
 checkConst :: (Data g) => g -> g -> Bool
 checkConst x y = toConstr x == toConstr y
@@ -73,9 +72,9 @@ wordleSolver wordList finalWord accumGuess = if all (checkConst (Exact 'a')) gue
     then accumGuess ++ [guess]
     else wordleSolver newWordList finalWord (accumGuess ++ [guess])
     where
-        guess = scoreWords wordList
-        guessFlag = wordleGame guess finalWord
         newWordList = filter (`validWords` guessFlag) wordList
+        guessFlag = wordleGame guess finalWord
+        guess = scoreWords wordList
 
 wordleGame :: [Char] -> [Char] -> WordleResult
 wordleGame guess finalWord = zipWith func guess finalWord
