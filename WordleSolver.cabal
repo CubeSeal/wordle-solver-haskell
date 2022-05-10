@@ -33,3 +33,16 @@ executable WordleSolver
     ghc-options:      -Wall
     hs-source-dirs:   src
     default-language: Haskell2010
+
+executable WordleGuesser
+    main-is:          wordle_guesser.hs
+
+    -- Modules included in this executable, other than Main.
+    other-modules:    App.Funcs
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+    build-depends:    base ^>=4.12.0.0
+    ghc-options:      -Wall
+    hs-source-dirs:   src
+    default-language: Haskell2010

@@ -1,5 +1,5 @@
-import App.Funcs
 import Data.Char ( toLower )
+import App.Funcs
 
 -- Main
 main :: IO ()
