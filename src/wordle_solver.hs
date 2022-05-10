@@ -1,12 +1,13 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 import System.IO ()
 import Data.Char ( toLower )
+import Data.List ( delete, group, nub, sort, sortBy, transpose )
 import Data.List.Split ( wordsBy )
 import Data.Data ( Data(toConstr) )
 import Data.Maybe (mapMaybe, fromMaybe)
 import Data.Function (on)
 
--- Data typesS
+-- Data types
 -- Represent the coloured characters of the game.
 data WordleChar = NoMatch {toChar :: Char}
     | Approx {toChar :: Char}
@@ -38,6 +39,26 @@ leftJoinProbTable func leftTBL rightTBL = ProbTable $ zip index newProbs
         leftProbs = map snd $ fromProbTable leftTBL
         rightProbs = map (\x -> fromMaybe 0 $ lookupTable x rightTBL) index
         newProbs = zipWith func leftProbs rightProbs
+
+dropApprox :: WordleResult -> String -> String
+dropApprox (x:xs) (y:ys)
+    | checkConst x (Approx y) = dropApprox xs ys
+    | otherwise               = y : dropApprox xs ys
+dropApprox _ _ = []
+
+lookupTable :: Eq a => a -> ProbTable a -> Maybe Double
+lookupTable tok probTable = lookup tok $ fromProbTable probTable
+
+replace :: String -> [Int] -> Char -> String
+replace xs i e = last $ iterate' func i
+    where
+        iterate' :: (a -> String) -> [a] -> [String]
+        iterate' _ [] = []
+        iterate' f (a:bc) = f a : iterate' f bc
+        func :: Int -> String
+        func i' = case splitAt i' xs of
+                        (before, _:after) -> before ++ e: after
+                        _ -> xs
 
 -- Main
 main :: IO ()
@@ -77,14 +98,13 @@ scoreWords wordList = fst $ last sortedWordList
     where
         sortedWordList = sortBy (compare `on` snd) $ fromProbTable totalScore
         totalScore = leftJoinProbTable (+) approxScore probScore
+        -- Approximate score
         approxScore = ProbTable $ zip wordList $ map (`wordApproxScore` approxProbTable) wordList
-        allMasks = delete [] $ powerSet [0,1.. 4]
+        approxProbTable = generateProbTable $ concat wordList
+        -- Positional score
         probScores = map (positionalScore wordList) allMasks
         probScore = ProbTable $ zip wordList $ map sum $ transpose probScores
-        approxProbTable = generateProbTable $ concat wordList
-
-lookupTable :: Eq a => a -> ProbTable a -> Maybe Double
-lookupTable tok probTable = lookup tok $ fromProbTable probTable
+        allMasks = delete [] $ powerSet [0,1.. 4]
 
 wordApproxScore :: String -> ProbTable Char -> Double
 wordApproxScore word probTable = sum $ mapMaybe (`lookupTable` probTable) $ nub word
@@ -102,17 +122,6 @@ positionalScore wordList mask = rowSums
                 func x = fromMaybe 0 $ lookupTable x probTable
                 probTable = generateProbTable tokList
 
-replace :: String -> [Int] -> Char -> String
-replace xs i e = last $ iterate' func i
-    where
-        iterate' :: (a -> String) -> [a] -> [String]
-        iterate' _ [] = []
-        iterate' f (a:bc) = f a : iterate' f bc
-        func :: Int -> String
-        func i' = case splitAt i' xs of
-                        (before, _:after) -> before ++ e: after
-                        _ -> xs
-
 generateProbTable :: Ord a => [a] -> ProbTable a
 generateProbTable ls = ProbTable output
     where
@@ -126,8 +135,8 @@ validWords :: String -> WordleResult -> Bool
 validWords word guessFlag = and [wordCriteria, exactCriteria, approxCriteria, nomatchCriteria]
     where
         wordCriteria = word /= toString guessFlag
-        exactCriteria = null ([ls | Exact ls <- guessFlag]) || or (zipWith (\x y -> Exact x == y) word guessFlag)
+        exactCriteria = null ([ls | Exact ls <- guessFlag]) || and (zipWith (\x y -> case y of {Exact b -> x == b; _ -> True}) word guessFlag)
         approxCriteria = case [ls | Approx ls <- guessFlag] of
             [] -> True
-            x -> any (`elem` x) word
+            approxMatches -> any (`elem` approxMatches) (dropApprox guessFlag word) && and (zipWith (\x y -> Approx x /= y) word guessFlag)
         nomatchCriteria = not $ any (`elem` [ls | NoMatch ls <- guessFlag]) word
