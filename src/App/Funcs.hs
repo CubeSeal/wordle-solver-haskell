@@ -4,6 +4,7 @@ module App.Funcs
   ( WordleString,
     ScoreTable,
     WordList,
+    toWordleString,
     isAllExact,
     wordleGame,
     scoreWords,
@@ -14,8 +15,9 @@ where
 -- External Modules
 import Data.Data (Data (toConstr))
 import Data.Function (on)
-import Data.List (delete, group, nub, sort, sortBy, transpose)
+import Data.List (delete, group, nub, sort, sortBy, transpose, foldl')
 import Data.Maybe (fromMaybe, mapMaybe)
+import Control.Monad (filterM)
 
 -- Data Types
 
@@ -26,21 +28,28 @@ data WordleChar
   | Exact {fromWordleChar :: Char}
   deriving (Read, Show, Eq, Data)
 
--- Represent probability tables (analogous to frequencey tables)
+-- Represent probability tables (analogous to frequency tables)
 newtype ScoreTable a = ScoreTable {fromScoreTable :: [(a, Double)]}
   deriving (Show, Eq)
 
-type WordleString = [WordleChar]  -- String of WordleChar's
+type WordleString = [WordleChar] -- String of WordleChar's
 type WordList = [String]
-type Mask = [Int]  -- Used for generating tokens
+type Mask = [Int] -- Used for generating tokens
 
 -- Helper Functions
 powerSet :: [a] -> [[a]]
-powerSet [] = [[]]
-powerSet (x : xs) = map (x :) (powerSet xs) ++ powerSet xs
+powerSet = filterM $ const [True, False]
 
 toString :: WordleString -> String
 toString = map fromWordleChar
+
+toWordleString :: String -> String -> WordleString
+toWordleString = zipWith func
+  where
+    func a 'e' = Exact a
+    func a 'a' = Approx a
+    func a 'n' = NoMatch a
+    func a _   = NoMatch a
 
 checkConst :: (Data g) => g -> g -> Bool
 checkConst x y = toConstr x == toConstr y
@@ -51,14 +60,15 @@ isAllExact = all (checkConst (Exact 'a'))
 lookupTable :: Eq a => a -> ScoreTable a -> Maybe Double
 lookupTable tok scoreTable = lookup tok $ fromScoreTable scoreTable
 
+-- Replaces elements of string with char with given indices.
 replace :: String -> [Int] -> Char -> String
 replace string [] _ = string
-replace string (i : is) char = replace (replace' i) is char
+replace string indices char = foldl' (\x y -> replace' x y char) string indices
   where
-    replace' :: Int -> String
-    replace' i' = case splitAt i' string of
-      (before, _ : after) -> before ++ char : after
-      _ -> string
+    replace' :: String -> Int -> Char -> String
+    replace' str i' e = case splitAt i' str of
+      (before, _ : after) -> before ++ e : after
+      _                   -> str
 
 -- Wordle Functions
 
@@ -84,7 +94,7 @@ scoreWords wordList = fst $ last sortedWordList
     -- Positional score
     probScore = map sum $ transpose probScores
     probScores = map (posScores wordList) allMasks
-    allMasks = delete [] $ powerSet [0, 1 .. 4]
+    allMasks = delete [] $ powerSet [0, 1.. 4]
 
 -- Generates the approximate score for a word given a ScoreTable Char
 wordApproxScore :: String -> ScoreTable Char -> Double
@@ -98,7 +108,7 @@ posScores wordList mask = rowSums
     colwiseFreqs = map tokProbs splitCols
     splitCols = transpose splitWords
     splitWords = map (words . (\x -> replace x mask ' ')) wordList
-    tokProbs :: [String] -> [Double]  -- Generates token scores
+    tokProbs :: [String] -> [Double] -- Generates token scores
     tokProbs tokList = map func tokList
       where
         func x = fromMaybe 0 $ lookupTable x scoreTable
@@ -115,20 +125,20 @@ createScoreTable ls = ScoreTable $ map func freqTable
 
 -- Checks if word is a valid guess given WordleString information
 validWords :: String -> WordleString -> Bool
-validWords word guessFlag = and [wordCriteria, exactCriteria, approxCriteria, nomatchCriteria]
+validWords word guessFlag =
+  and
+    [ wordCriteria,
+      exactCriteria,
+      approxCriteria,
+      nomatchCriteria
+    ]
   where
     wordCriteria = word /= toString guessFlag
-    exactCriteria = isValidExact word guessFlag
-    approxCriteria = isValidApprox word guessFlag
+    exactCriteria = case [ls | Exact ls <- guessFlag] of
+      [] -> True
+      _  -> and (zipWith (\x y -> case y of Exact b -> x == b; _ -> True) word guessFlag)
+    approxCriteria = case [ls | Approx ls <- guessFlag] of
+      []            -> True
+      approxMatches -> any (`elem` approxMatches) word
+        && and (zipWith (\x y -> Approx x /= y) word guessFlag)
     nomatchCriteria = not $ any (`elem` [ls | NoMatch ls <- guessFlag]) word
-
-isValidExact :: String -> WordleString -> Bool
-isValidExact word guessFlag = case [ls | Exact ls <- guessFlag] of
-  [] -> True
-  _ -> and (zipWith (\x y -> case y of Exact b -> x == b; _ -> True) word guessFlag)
-
-isValidApprox :: String -> WordleString -> Bool
-isValidApprox word guessFlag = case [ls | Approx ls <- guessFlag] of
-  [] -> True
-  approxMatches -> any (`elem` approxMatches) word
-      && and (zipWith (\x y -> Approx x /= y) word guessFlag)
