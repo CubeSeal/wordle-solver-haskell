@@ -18,43 +18,35 @@ main = do
     then interactiveGame wordList []
     else do
       putStrLn "Enter word to solve:"
-      finalWord <- getAndValInput
-        wordList [\x -> length x == 5, (`elem` wordList), all (`elem` ['a'..'z'])]
+      finalWord <- getAndValInput [\x -> length x == 5, (`elem` wordList), all (`elem` ['a'..'z'])]
       print $ wordleSolver wordList finalWord []
 
 -- Make sure the user isn't fucking with me
-getAndValInput :: WordList -> [String -> Bool] -> IO String
-getAndValInput wordList testFuncs = do
+getAndValInput :: [String -> Bool] -> IO String
+getAndValInput testFuncs = do
   unSafeInput <- map toLower <$> getLine
   let test = all (\f -> f unSafeInput) testFuncs
   if test
     then return unSafeInput
     else do
-      putStrLn "Not a valid word. Try again:"
-      getAndValInput wordList testFuncs
+      putStrLn "Not valid. Try again:"
+      getAndValInput testFuncs
 
 -- Interactive version of the game.
 interactiveGame :: WordList -> [String] -> IO ()
 interactiveGame wl accumGuess = do
-  putStrLn $ "Guess = " ++ calcGuess
+  putStrLn $ "Guess = " ++ scoreWords wl
   putStrLn $ "Guesses so far = " ++ show accumGuess
   putStrLn "Enter your guess:"
-  userGuess <- parseGuess <$> getAndValInput
-    wl
-    [\x -> length x == 5, all (`elem` ['a'..'z'])]
+  userGuess <- getAndValInput [\x -> length x == 5, (`elem` wl), all (`elem` ['a'..'z'])]
   putStrLn "Enter your wordle result (e, a, n):"
-  userFlag <- getLine
+  userFlag <- getAndValInput [\x -> length x == 5, all (`elem` ['a', 'e', 'n'])]
   let
     guessFlag = toWordleString userGuess userFlag
     newWL = filter (`validWords` guessFlag) wl
   if isAllExact guessFlag
-    then print $ "Final Guesses" ++ show (accumGuess ++ [userGuess])
+    then print $ "Final Guesses = " ++ show (accumGuess ++ [userGuess])
     else interactiveGame newWL (accumGuess ++ [userGuess])
-  where
-    parseGuess x = case x of
-      [] -> calcGuess
-      y -> y
-    calcGuess = scoreWords wl
 
 -- Program Logic
 wordleSolver :: WordList -> String -> [String] -> [String]
