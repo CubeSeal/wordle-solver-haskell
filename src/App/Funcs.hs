@@ -8,7 +8,7 @@ module App.Funcs
     isAllExact,
     wordleGame,
     scoreWords,
-    validWords,
+    isValidWord,
   )
 where
 
@@ -123,22 +123,31 @@ createScoreTable ls = ScoreTable $ map func freqTable
     lsLength = length ls
     freqTable = map (\x -> (head x, length x)) . group . sort $ ls
 
--- Checks if word is a valid guess given WordleString information
-validWords :: String -> WordleString -> Bool
-validWords word guessFlag =
-  and
-    [ wordCriteria,
-      exactCriteria,
-      approxCriteria,
-      nomatchCriteria
-    ]
+isValidWord :: String -> WordleString -> Bool
+isValidWord w g = all (\f -> f w g) listOfFuncs
   where
-    wordCriteria = word /= toString guessFlag
-    exactCriteria = case [ls | Exact ls <- guessFlag] of
-      [] -> True
-      _  -> and (zipWith (\x y -> case y of Exact b -> x == b; _ -> True) word guessFlag)
-    approxCriteria = case [ls | Approx ls <- guessFlag] of
-      []            -> True
-      approxMatches -> any (`elem` approxMatches) word
-        && and (zipWith (\x y -> Approx x /= y) word guessFlag)
-    nomatchCriteria = not $ any (`elem` [ls | NoMatch ls <- guessFlag]) word
+    listOfFuncs = [wordCriteria, exactCriteria, approxCriteria, noMatchCriteria]
+
+wordCriteria :: String -> WordleString -> Bool
+wordCriteria w g = w /= toString g
+
+exactCriteria :: String -> WordleString -> Bool
+exactCriteria w g = case [ls | Exact ls <- g] of
+  [] -> True
+  -- If all Exact WordleChars match the associated Char of the string.
+  _  -> and $ zipWith doExactsMatch w g
+  where
+    doExactsMatch w' (Exact g') = w'== g'
+    doExactsMatch _ _ = True
+
+approxCriteria :: String -> WordleString -> Bool
+approxCriteria w g = case [ls | Approx ls <- g] of
+  [] -> True
+  {- If Approx WordleChars are in word AND if they do not match the associated Char of the
+  String -}
+  ls  -> all (`elem` w) ls && and (zipWith approxNotInPos w g)
+  where
+    approxNotInPos w' g' = Approx w' /= g'
+
+noMatchCriteria :: String -> WordleString -> Bool
+noMatchCriteria w g = not $ any (`elem` [ls | NoMatch ls <- g ]) w

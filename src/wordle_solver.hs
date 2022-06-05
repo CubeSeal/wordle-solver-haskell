@@ -3,7 +3,7 @@ import App.Funcs
     toWordleString,
     isAllExact,
     scoreWords,
-    validWords,
+    isValidWord,
     wordleGame,
   )
 import Data.Char (toLower)
@@ -43,7 +43,7 @@ interactiveGame wl accumGuess = do
   userFlag <- getAndValInput [\x -> length x == 5, all (`elem` ['a', 'e', 'n'])]
   let
     guessFlag = toWordleString userGuess userFlag
-    newWL = filter (`validWords` guessFlag) wl
+    newWL = filter (`isValidWord` guessFlag) wl
   if isAllExact guessFlag
     then print $ "Final Guesses = " ++ show (accumGuess ++ [userGuess])
     else interactiveGame newWL (accumGuess ++ [userGuess])
@@ -55,6 +55,6 @@ wordleSolver wordList finalWord accumGuess =
     then accumGuess ++ [guess]
     else wordleSolver newWordList finalWord (accumGuess ++ [guess])
   where
-    newWordList = filter (`validWords` guessFlag) wordList
+    newWordList = filter (`isValidWord` guessFlag) wordList
     guessFlag = wordleGame guess finalWord
     guess = scoreWords wordList
