@@ -15,11 +15,12 @@ where
 -- External Modules
 import Data.Data (Data (toConstr))
 import Data.Function (on)
-import Data.List (delete, group, nub, sort, sortBy, transpose, foldl')
+import Data.Foldable
 import Data.Maybe (fromMaybe, mapMaybe)
 import Control.Monad (filterM)
+import qualified Data.List.NonEmpty as N
 
--- Data Types
+-- Data Types --
 
 -- Represent the coloured letters of the game
 data WordleChar
@@ -28,23 +29,43 @@ data WordleChar
   | Exact {fromWordleChar :: Char}
   deriving (Read, Show, Eq, Data)
 
+type WordleString = N.NonEmpty WordleChar -- String of WordleChar's
+
 -- Represent probability tables (analogous to frequency tables)
-newtype ScoreTable a = ScoreTable {fromScoreTable :: [(a, Double)]}
+newtype ScoreTable a = ScoreTable {fromScoreTable :: N.NonEmpty (a, Double)}
   deriving (Show, Eq)
+-- Creates score table from list
+createScoreTable :: Ord a => N.NonEmpty a -> ScoreTable a
+createScoreTable ls = ScoreTable $ N.map func freqTable
+  where
+    func (x, y) = (x, prob y * (1 - prob y))
+    prob x = fromIntegral x / fromIntegral lsLength
+    lsLength = N.length ls
+    freqTable = N.map (\x -> (N.head x, N.length x)) . N.group1 . N.sort $ ls
 
-type WordleString = [WordleChar] -- String of WordleChar's
-type WordList = [String]
-type Mask = [Int] -- Used for generating tokens
+lookupTable :: Eq a => a -> ScoreTable a -> Maybe Double
+lookupTable x (ScoreTable y) = lookup x $ N.toList y
 
--- Helper Functions
+-- Simple types
+type NString = N.NonEmpty Char
+type WordList = N.NonEmpty NString
+type Mask = N.NonEmpty Int -- Used for generating tokens
+
+-- Helper Functions -- 
+cconcat :: N.NonEmpty (N.NonEmpty a) -> N.NonEmpty a
+cconcat xs = foldr1 (\x y -> ) b (t a)
+
 powerSet :: [a] -> [[a]]
 powerSet = filterM $ const [True, False]
 
 toString :: WordleString -> String
-toString = map fromWordleChar
+toString = N.toList . N.map fromWordleChar
 
-toWordleString :: String -> String -> WordleString
-toWordleString = zipWith func
+toWordleString :: String -> String -> Maybe WordleString
+toWordleString x y = do
+  a <- N.nonEmpty x
+  b <- N.nonEmpty y
+  return $ N.zipWith func a b
   where
     func a 'e' = Exact a
     func a 'a' = Approx a
@@ -57,9 +78,6 @@ checkConst x y = toConstr x == toConstr y
 isAllExact :: WordleString -> Bool
 isAllExact = all (checkConst (Exact 'a'))
 
-lookupTable :: Eq a => a -> ScoreTable a -> Maybe Double
-lookupTable tok scoreTable = lookup tok $ fromScoreTable scoreTable
-
 -- Replaces elements of string with char with given indices.
 replace :: String -> [Int] -> Char -> String
 replace string [] _ = string
@@ -70,11 +88,11 @@ replace string indices char = foldl' (\x y -> replace' x y char) string indices
       (before, _ : after) -> before ++ e : after
       _                   -> str
 
--- Wordle Functions
+-- Wordle Functions -- 
 
 -- Plays wordle with known secret answer
-wordleGame :: [Char] -> [Char] -> WordleString
-wordleGame guess answer = zipWith func guess answer
+wordleGame :: NString -> NString -> WordleString
+wordleGame guess answer = N.zipWith func guess answer
   where
     func = \x y -> if x == y
       then Exact x
@@ -83,22 +101,22 @@ wordleGame guess answer = zipWith func guess answer
         else NoMatch x
 
 -- Gets the 'best' word out of a list of words
-scoreWords :: WordList -> String
-scoreWords wordList = fst $ last sortedWordList
+scoreWords :: WordList -> NString
+scoreWords wl = fst $ last sortedWordList
   where
     sortedWordList = sortBy (compare `on` snd) totalScore
-    totalScore = zip wordList $ zipWith (+) approxScore probScore
+    totalScore = N.zip wl $ N.zipWith (+) approxScore probScore
     -- Approximate score
-    approxScore = map (`wordApproxScore` approxScoreTable) wordList
-    approxScoreTable = createScoreTable $ concat wordList
+    approxScore = N.map (`wordApproxScore` approxScoreTable) wl
+    approxScoreTable = createScoreTable $ concat wl
     -- Positional score
     probScore = map sum $ transpose probScores
     probScores = map (posScores wordList) allMasks
-    allMasks = delete [] $ powerSet [0, 1.. 4]
+    allMasks = N.fromList $ delete [] $ powerSet ([0, 1.. 4] :: [Int])
 
 -- Generates the approximate score for a word given a ScoreTable Char
-wordApproxScore :: String -> ScoreTable Char -> Double
-wordApproxScore word scoreTable = sum $ mapMaybe (`lookupTable` scoreTable) $ nub word
+wordApproxScore :: NString -> ScoreTable Char -> Double
+wordApproxScore word scoreTable = sum $ mapMaybe (`lookupTable` scoreTable) $ N.toList $ N.nub word
 
 -- Generates the positional scores for a list of words given a Mask
 posScores :: WordList -> Mask -> [Double]
@@ -113,15 +131,6 @@ posScores wordList mask = rowSums
       where
         func x = fromMaybe 0 $ lookupTable x scoreTable
         scoreTable = createScoreTable tokList
-
--- Creates score table from list
-createScoreTable :: Ord a => [a] -> ScoreTable a
-createScoreTable ls = ScoreTable $ map func freqTable
-  where
-    func (x, y) = (x, prob y * (1 - prob y))
-    prob x = fromIntegral x / fromIntegral lsLength
-    lsLength = length ls
-    freqTable = map (\x -> (head x, length x)) . group . sort $ ls
 
 -- Checks if word is a valid guess given WordleString information
 validWords :: String -> WordleString -> Bool
