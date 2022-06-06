@@ -1,4 +1,4 @@
-import App.Funcs
+import App.Wordle
   ( WordList,
     toWordleString,
     isAllExact,

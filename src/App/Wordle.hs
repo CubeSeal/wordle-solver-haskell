@@ -1,8 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
-module App.Funcs
+module App.Wordle
   ( WordleString,
-    ScoreTable,
     WordList,
     toWordleString,
     isAllExact,
@@ -13,9 +12,10 @@ module App.Funcs
 where
 
 -- External Modules
+import App.ScoreTable ( ScoreTable, lookupTable, createTable ) 
 import Data.Data (Data (toConstr))
 import Data.Function (on)
-import Data.List (delete, group, nub, sort, sortBy, transpose, foldl')
+import Data.List (delete, nub, sortBy, transpose, foldl')
 import Data.Maybe (fromMaybe, mapMaybe)
 import Control.Monad (filterM)
 
@@ -28,11 +28,8 @@ data WordleChar
   | Exact {fromWordleChar :: Char}
   deriving (Read, Show, Eq, Data)
 
--- Represent probability tables (analogous to frequency tables)
-newtype ScoreTable a = ScoreTable {fromScoreTable :: [(a, Double)]}
-  deriving (Show, Eq)
-
 type WordleString = [WordleChar] -- String of WordleChar's
+
 type WordList = [String]
 type Mask = [Int] -- Used for generating tokens
 
@@ -56,9 +53,6 @@ checkConst x y = toConstr x == toConstr y
 
 isAllExact :: WordleString -> Bool
 isAllExact = all (checkConst (Exact 'a'))
-
-lookupTable :: Eq a => a -> ScoreTable a -> Maybe Double
-lookupTable tok scoreTable = lookup tok $ fromScoreTable scoreTable
 
 -- Replaces elements of string with char with given indices.
 replace :: String -> [Int] -> Char -> String
@@ -90,7 +84,7 @@ scoreWords wordList = fst $ last sortedWordList
     totalScore = zip wordList $ zipWith (+) approxScore probScore
     -- Approximate score
     approxScore = map (`wordApproxScore` approxScoreTable) wordList
-    approxScoreTable = createScoreTable $ concat wordList
+    approxScoreTable = createTable $ concat wordList
     -- Positional score
     probScore = map sum $ transpose probScores
     probScores = map (posScores wordList) allMasks
@@ -112,16 +106,7 @@ posScores wordList mask = rowSums
     tokProbs tokList = map func tokList
       where
         func x = fromMaybe 0 $ lookupTable x scoreTable
-        scoreTable = createScoreTable tokList
-
--- Creates score table from list
-createScoreTable :: Ord a => [a] -> ScoreTable a
-createScoreTable ls = ScoreTable $ map func freqTable
-  where
-    func (x, y) = (x, prob y * (1 - prob y))
-    prob x = fromIntegral x / fromIntegral lsLength
-    lsLength = length ls
-    freqTable = map (\x -> (head x, length x)) . group . sort $ ls
+        scoreTable = createTable tokList
 
 isValidWord :: String -> WordleString -> Bool
 isValidWord w g = all (\f -> f w g) listOfFuncs
