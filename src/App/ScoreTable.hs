@@ -1,7 +1,20 @@
-module App.ScoreTable (ScoreTable, fromScoreTable, lookupTable, createTable) where
+module App.ScoreTable
+  ( ScoreTable
+  , fromScoreTable
+  , lookupTable
+  , createTable
+  , zipTable
+  , leftJoinTable
+  , sortTable
+  , maxTable
+  , indices
+  , vals
+  , fTable
+  , rightjoinTable
+  ) where
 
-import Data.List (group, sort, sortOn)
-import Data.Maybe (fromMaybe)
+import           Data.List  (group, sort, sortOn)
+import           Data.Maybe (fromMaybe)
 
 -- Represent probability tables (analogous to frequency tables)
 newtype ScoreTable a = Table {fromScoreTable :: [(a, Double)]}
@@ -18,38 +31,42 @@ vals (Table x) = map snd x
 lookupTable :: Eq a => a -> ScoreTable a -> Maybe Double
 lookupTable entry (Table tbl) = lookup entry tbl
 
+zipTable :: Ord a => [a] -> [Double] -> ScoreTable a
+zipTable x y = Table $ zip x y
+
 createTable :: Ord a => [a] -> ScoreTable a
 createTable ls = Table $ map f cntTbl
-  where
-    f (x, y) = (x, prob y * (1 - prob y))
-    prob x = fromIntegral x / fromIntegral lsLength
-    lsLength = length ls
-    cntTbl = map (\x -> (head x, length x)) . group . sort $ ls
+ where
+  f (x, y) = (x, prob y * (1 - prob y))
+  prob x = fromIntegral x / fromIntegral lsLength
+  lsLength = length ls
+  cntTbl   = map (\x -> (head x, length x)) . group . sort $ ls
 
 sortTable :: Ord a => ScoreTable a -> ScoreTable a
-sortTable (Table tbl) = Table $ sortOn fst tbl
+sortTable (Table tbl) = Table $ sortOn snd tbl
 
 fTable :: (Double -> Double) -> ScoreTable a -> ScoreTable a
-fTable f (Table tbl) = Table $ map g tbl
-  where
-    g (x, y) = (x, f y)
+fTable f (Table tbl) = Table $ map g tbl where g (x, y) = (x, f y)
 
-leftJoinTable ::
-  Ord a =>
-  (Double -> Double -> Double) ->
-  ScoreTable a ->
-  ScoreTable a ->
-  ScoreTable a
+leftJoinTable
+  :: Ord a
+  => (Double -> Double -> Double)
+  -> ScoreTable a
+  -> ScoreTable a
+  -> ScoreTable a
 leftJoinTable f l r = Table $ zip iLeft newVals
-  where
-    newVals = zipWith f (vals l) matchedValsR
-    matchedValsR = map (\x -> fromMaybe 0 (lookupTable x r)) iLeft
-    iLeft = indices l
+ where
+  newVals      = zipWith f (vals l) matchedValsR
+  matchedValsR = map (\x -> fromMaybe 0 (lookupTable x r)) iLeft
+  iLeft        = indices l
 
-rightjoinTable ::
-  Ord a =>
-  (Double -> Double -> Double) ->
-  ScoreTable a ->
-  ScoreTable a ->
-  ScoreTable a
+rightjoinTable
+  :: Ord a
+  => (Double -> Double -> Double)
+  -> ScoreTable a
+  -> ScoreTable a
+  -> ScoreTable a
 rightjoinTable f = flip (leftJoinTable f)
+
+maxTable :: Ord a => ScoreTable a -> (a, Double)
+maxTable = last . fromScoreTable . sortTable

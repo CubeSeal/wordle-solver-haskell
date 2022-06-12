@@ -12,11 +12,17 @@ module App.Wordle
 where
 
 -- External Modules
-import App.ScoreTable ( ScoreTable, lookupTable, createTable ) 
+-- External Modules
+-- External Modules
+-- External Modules
+-- External Modules
+-- External Modules
+-- External Modules
+-- External Modules
+import App.ScoreTable ( ScoreTable, lookupTable, createTable, zipTable, leftJoinTable, maxTable )
 import Data.Data (Data (toConstr))
-import Data.Function (on)
-import Data.List (delete, nub, sortBy, transpose, foldl')
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.List (delete, nub, transpose, foldl')
+import Data.Maybe (mapMaybe, fromMaybe)
 import Control.Monad (filterM)
 
 -- Data Types
@@ -31,7 +37,6 @@ data WordleChar
 type WordleString = [WordleChar] -- String of WordleChar's
 
 type WordList = [String]
-type Mask = [Int] -- Used for generating tokens
 
 -- Helper Functions
 powerSet :: [a] -> [[a]]
@@ -78,35 +83,38 @@ wordleGame guess answer = zipWith func guess answer
 
 -- Gets the 'best' word out of a list of words
 scoreWords :: WordList -> String
-scoreWords wordList = fst $ last sortedWordList
+scoreWords wl = fst $ maxTable s
   where
-    sortedWordList = sortBy (compare `on` snd) totalScore
-    totalScore = zip wordList $ zipWith (+) approxScore probScore
+    s = leftJoinTable (+) a p
     -- Approximate score
-    approxScore = map (`wordApproxScore` approxScoreTable) wordList
-    approxScoreTable = createTable $ concat wordList
+    a = approxScore wl
     -- Positional score
-    probScore = map sum $ transpose probScores
-    probScores = map (posScores wordList) allMasks
-    allMasks = delete [] $ powerSet [0, 1.. 4]
+    p = posScore wl
 
--- Generates the approximate score for a word given a ScoreTable Char
-wordApproxScore :: String -> ScoreTable Char -> Double
-wordApproxScore word scoreTable = sum $ mapMaybe (`lookupTable` scoreTable) $ nub word
-
--- Generates the positional scores for a list of words given a Mask
-posScores :: WordList -> Mask -> [Double]
-posScores wordList mask = rowSums
+approxScore :: WordList -> ScoreTable String
+approxScore wl = zipTable wl $ map f wl
   where
-    rowSums = map sum $ transpose colwiseFreqs
-    colwiseFreqs = map tokProbs splitCols
-    splitCols = transpose splitWords
-    splitWords = map (words . (\x -> replace x mask ' ')) wordList
-    tokProbs :: [String] -> [Double] -- Generates token scores
-    tokProbs tokList = map func tokList
+    f w = sum $ mapMaybe (`lookupTable` tbl) $ nub w
+    tbl = createTable $ concat wl
+
+posScore :: WordList -> ScoreTable String
+posScore wl = zipTable wl scores
+  where
+    toks = map tokeniseWord wl
+    colsOfToks = transpose toks
+    colwiseScores = map createTBLAndGetVals colsOfToks
+    scores = map sum $ transpose colwiseScores
+    createTBLAndGetVals :: [String] -> [Double]
+    createTBLAndGetVals t = map func t
       where
-        func x = fromMaybe 0 $ lookupTable x scoreTable
-        scoreTable = createTable tokList
+        func x = fromMaybe 0 $ lookupTable x tbl
+        tbl = createTable t
+
+tokeniseWord :: String -> [String]
+tokeniseWord s = concatMap f mask
+  where
+    f i = words $ replace s i ' '
+    mask = delete [] $ powerSet [0, 1..4]
 
 isValidWord :: String -> WordleString -> Bool
 isValidWord w g = all (\f -> f w g) listOfFuncs
