@@ -12,14 +12,8 @@ module App.Wordle
 where
 
 -- External Modules
--- External Modules
--- External Modules
--- External Modules
--- External Modules
--- External Modules
--- External Modules
--- External Modules
-import App.ScoreTable ( ScoreTable, lookupTable, createTable, zipTable, leftJoinTable, maxTable )
+
+import App.ScoreTable ( ScoreTable, lookupTable, createTable, zipTable, maxTable )
 import Data.Data (Data (toConstr))
 import Data.List (delete, nub, transpose, foldl')
 import Data.Maybe (mapMaybe, fromMaybe)
@@ -85,7 +79,7 @@ wordleGame guess answer = zipWith func guess answer
 scoreWords :: WordList -> String
 scoreWords wl = fst $ maxTable s
   where
-    s = leftJoinTable (+) a p
+    s = a <> p
     -- Approximate score
     a = approxScore wl
     -- Positional score

@@ -4,21 +4,33 @@ module App.ScoreTable
   , lookupTable
   , createTable
   , zipTable
-  , leftJoinTable
+  , leftJoin
+  , rightJoin
   , sortTable
   , maxTable
   , indices
   , vals
   , fTable
-  , rightjoinTable
   ) where
 
-import           Data.List  (group, sort, sortOn)
+import           Data.List  (group, sort, sortOn, union)
 import           Data.Maybe (fromMaybe)
 
 -- Represent probability tables (analogous to frequency tables)
 newtype ScoreTable a = Table {fromScoreTable :: [(a, Double)]}
   deriving (Show, Eq)
+
+-- Instances --
+instance Ord a => Semigroup (ScoreTable a) where
+  x <> y = fullJoin (+) x y
+
+instance Ord a => Monoid (ScoreTable a) where
+  mempty = Table []
+
+instance Functor ScoreTable where
+  fmap f (Table tbl) = Table $ map g tbl
+    where
+      g (x, y) = (f x, y)
 
 -- Funcs --
 
@@ -46,27 +58,43 @@ sortTable :: Ord a => ScoreTable a -> ScoreTable a
 sortTable (Table tbl) = Table $ sortOn snd tbl
 
 fTable :: (Double -> Double) -> ScoreTable a -> ScoreTable a
-fTable f (Table tbl) = Table $ map g tbl where g (x, y) = (x, f y)
+fTable f (Table tbl) = Table $ map g tbl
+  where
+    g (x, y) = (x, f y)
 
-leftJoinTable
+fullJoin
   :: Ord a
   => (Double -> Double -> Double)
   -> ScoreTable a
   -> ScoreTable a
   -> ScoreTable a
-leftJoinTable f l r = Table $ zip iLeft newVals
+fullJoin f l r = zipTable indices' newVals
+  where
+    newVals = zipWith f v1 v2
+    v1 = map (g l) indices'
+    v2 = map (g r) indices'
+    g x = fromMaybe 0 . (`lookupTable` x)
+    indices' = indices l `union` indices r
+
+leftJoin
+  :: Ord a
+  => (Double -> Double -> Double)
+  -> ScoreTable a
+  -> ScoreTable a
+  -> ScoreTable a
+leftJoin f l r = Table $ zip iLeft newVals
  where
   newVals      = zipWith f (vals l) matchedValsR
   matchedValsR = map (\x -> fromMaybe 0 (lookupTable x r)) iLeft
   iLeft        = indices l
 
-rightjoinTable
+rightJoin
   :: Ord a
   => (Double -> Double -> Double)
   -> ScoreTable a
   -> ScoreTable a
   -> ScoreTable a
-rightjoinTable f = flip (leftJoinTable f)
+rightJoin f = flip $ leftJoin f
 
 maxTable :: Ord a => ScoreTable a -> (a, Double)
 maxTable = last . fromScoreTable . sortTable

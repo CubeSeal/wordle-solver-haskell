@@ -35,12 +35,21 @@ getAndValInput testFuncs = do
 -- Interactive version of the game.
 interactiveGame :: WordList -> [String] -> IO ()
 interactiveGame wl accumGuess = do
-  putStrLn $ "Guess = " ++ scoreWords wl
+  putStrLn $ "Guess = "          ++ scoreWords wl
   putStrLn $ "Guesses so far = " ++ show accumGuess
   putStrLn "Enter your guess:"
-  userGuess <- getAndValInput [\x -> length x == 5, (`elem` wl), all (`elem` ['a'..'z'])]
+
+  userGuess <- getAndValInput
+    [ \x -> length x == 5
+    , all (`elem` ['a'..'z'])
+    ]
+
   putStrLn "Enter your wordle result (e, a, n):"
-  userFlag <- getAndValInput [\x -> length x == 5, all (`elem` ['a', 'e', 'n'])]
+  userFlag <- getAndValInput
+    [\x -> length x == 5
+    , all (`elem` ['a', 'e', 'n'])
+    ]
+    
   let
     guessFlag = toWordleString userGuess userFlag
     newWL = filter (`isValidWord` guessFlag) wl
